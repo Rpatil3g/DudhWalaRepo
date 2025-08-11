@@ -197,6 +197,23 @@ export const getSaleForCustomerProductAndDate = (customerId, productId, date) =>
     });
 };
 
+export const getLastSevenDaysSalesForCustomer = (customerId) => {
+    return new Promise((resolve) => {
+        const today = new Date();
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 6);
+
+        const todayString = format(today, 'yyyy-MM-dd');
+        const sevenDaysAgoString = format(sevenDaysAgo, 'yyyy-MM-dd');
+
+        const sales = db.getAllSync(
+            `SELECT DISTINCT sale_date FROM daily_sales WHERE customer_id = ? AND sale_date BETWEEN ? AND ?`,
+            customerId, sevenDaysAgoString, todayString
+        );
+        resolve(sales.map(s => s.sale_date));
+    });
+};
+
 export const getSalesDataForDate = (date) => {
     return new Promise((resolve) => {
         const data = db.getAllSync(
@@ -257,20 +274,5 @@ export const getCustomerDuesForPeriod = (startDate, endDate) => {
             startDate, endDate
         );
         resolve(dues);
-    });
-};
-
-// --- Backup Operations ---
-export const getAllDataForBackup = () => {
-    return new Promise((resolve) => {
-        const today = new Date();
-        const startOfMonthString = format(startOfMonth(today), 'yyyy-MM-dd');
-        const todayString = format(today, 'yyyy-MM-dd');
-
-        const customers = db.getAllSync('SELECT * FROM customers');
-        const products = db.getAllSync('SELECT * FROM products');
-        const sales = db.getAllSync('SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ?', startOfMonthString, todayString);
-        
-        resolve({ customers, products, sales });
     });
 };

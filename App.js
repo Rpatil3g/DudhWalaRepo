@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler'; // This must be the very first import
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -55,7 +56,7 @@ function DashboardStack() {
             <Stack.Screen
                 name="DashboardHome"
                 component={DashboardScreen}
-                options={({ navigation }) => ({ // Use a function to get the correct navigation prop
+                options={({ navigation }) => ({
                     title: 'Dashboard',
                     headerRight: () => (
                         <IconButton
@@ -110,9 +111,8 @@ export default function App() {
             })
             .catch(err => {
                 console.error('Database initialization failed:', err);
-                // You could show an error message to the user here
             });
-    }, []); // Empty dependency array ensures this runs only once on mount
+    }, []);
 
     if (!dbInitialized) {
         return (
