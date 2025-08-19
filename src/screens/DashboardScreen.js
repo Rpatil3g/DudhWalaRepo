@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, Card, Title, List, Divider, Button } from 'react-native-paper';
@@ -35,7 +36,7 @@ const DashboardScreen = () => {
     const handleBackup = async () => {
         try {
             const data = await getAllDataForBackup();
-            const backupDataString = JSON.stringify(data, null, 2); // Pretty print JSON
+            const backupDataString = JSON.stringify(data, null, 2);
             
             const date = new Date();
             const timestamp = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;

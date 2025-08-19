@@ -1,8 +1,9 @@
+
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { Text, Card, Title, List, Divider, Button } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
-import { getTotalSalesForPeriod, getCustomerDuesForPeriod, getSalesForCustomer } from '../db/Database';
+import { getTotalSalesForPeriod, getCustomerDuesForPeriod, getSalesForCustomer, getPaymentsForCustomer, getTotalDuesForCustomerUpToDate } from '../db/Database';
 import { format, startOfMonth } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Print from 'expo-print';
@@ -91,48 +92,57 @@ const ReportsScreen = () => {
         const formattedStartDate = format(startDate, 'yyyy-MM-dd');
         const formattedEndDate = format(endDate, 'yyyy-MM-dd');
 
+        const openingBalance = await getTotalDuesForCustomerUpToDate(customer.id, formattedStartDate);
         const salesForBill = await getSalesForCustomer(customer.id, formattedStartDate, formattedEndDate);
+        const paymentsForBill = await getPaymentsForCustomer(customer.id, formattedStartDate, formattedEndDate);
 
-        let salesRows = salesForBill.map(sale => `
-            <tr>
-                <td>${format(new Date(sale.sale_date + 'T00:00:00'), 'dd-MM-yyyy')}</td>
-                <td>${sale.product_name}</td>
-                <td>${sale.quantity.toFixed(2)}</td>
-                <td>₹${sale.price_per_unit.toFixed(2)}</td>
-                <td>₹${sale.total_amount.toFixed(2)}</td>
-            </tr>
-        `).join('');
+        const salesTotal = salesForBill.reduce((acc, sale) => acc + sale.total_amount, 0);
+        const paymentsTotal = paymentsForBill.reduce((acc, p) => acc + p.amount_paid, 0);
+        const closingBalance = openingBalance + salesTotal - paymentsTotal;
 
-        const billTotal = salesForBill.reduce((acc, sale) => acc + sale.total_amount, 0);
+        const combinedEntries = [
+            ...salesForBill.map(s => ({ date: s.sale_date, type: 'sale', data: s })),
+            ...paymentsForBill.map(p => ({ date: p.payment_date, type: 'payment', data: p }))
+        ].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        let entryRows = combinedEntries.map(entry => {
+            if (entry.type === 'sale') {
+                const sale = entry.data;
+                return `<tr><td>${format(new Date(sale.sale_date + 'T00:00:00'), 'dd-MM-yy')}</td><td>${sale.product_name} (${sale.quantity})</td><td style="text-align:right;">₹${sale.total_amount.toFixed(2)}</td></tr>`;
+            } else {
+                const payment = entry.data;
+                return `<tr><td>${format(new Date(payment.payment_date + 'T00:00:00'), 'dd-MM-yy')}</td><td>Payment Received</td><td style="text-align:right;">- ₹${payment.amount_paid.toFixed(2)}</td></tr>`;
+            }
+        }).join('');
 
         const htmlContent = `
             <html>
-                <head><style>body{font-family:sans-serif;padding:20px;} h1,h2{text-align:center;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background-color:#f2f2f2;}</style></head>
+                <head><style>body{font-family:sans-serif;padding:20px;} h1,h2{text-align:center;} table{width:100%;border-collapse:collapse;margin-bottom:20px;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background-color:#f2f2f2;} .summary-table td{font-weight:bold;}</style></head>
                 <body>
-                    <h1>Milk Bill</h1>
+                    <h1>Bill Statement</h1>
                     <h2>${customer.name}</h2>
-                    <p><strong>Bill Period:</strong> ${format(startDate, 'dd MMM yyyy')} to ${format(endDate, 'dd MMM yyyy')}</p>
+                    <p><strong>Period:</strong> ${format(startDate, 'dd MMM yyyy')} to ${format(endDate, 'dd MMM yyyy')}</p>
                     <hr/>
-                    <h3>Sales Details</h3>
-                    <table>
-                        <thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
-                        <tbody>${salesRows.length > 0 ? salesRows : '<tr><td colspan="5" style="text-align:center;">No sales in this period.</td></tr>'}</tbody>
+                    <table><thead><tr><th>Date</th><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+                        <tbody>
+                            <tr><td></td><td><strong>Opening Balance</strong></td><td style="text-align:right;"><strong>₹${openingBalance.toFixed(2)}</strong></td></tr>
+                            ${entryRows}
+                        </tbody>
                     </table>
-                    <h3 style="text-align:right;margin-top:20px;">Period Total: ₹${billTotal.toFixed(2)}</h3>
+                    <table class="summary-table">
+                        <tr><td>Period Sales</td><td style="text-align:right;">₹${salesTotal.toFixed(2)}</td></tr>
+                        <tr><td>Period Payments</td><td style="text-align:right;">- ₹${paymentsTotal.toFixed(2)}</td></tr>
+                        <tr><td>Closing Balance</td><td style="text-align:right;">₹${closingBalance.toFixed(2)}</td></tr>
+                    </table>
                 </body>
             </html>
         `;
 
         try {
             const { uri } = await Print.printToFileAsync({ html: htmlContent });
-            if (!(await Sharing.isAvailableAsync())) {
-                Alert.alert("Sharing not available", "Sharing is not available on your device.");
-                return;
-            }
             await Sharing.shareAsync(uri, { dialogTitle: 'Share Bill', mimeType: 'application/pdf' });
         } catch (error) {
             Alert.alert("Error", "Could not generate or share PDF.");
-            console.error(error);
         }
     };
 

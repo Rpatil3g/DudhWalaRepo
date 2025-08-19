@@ -1,3 +1,4 @@
+
 import * as SQLite from 'expo-sqlite';
 import { format, startOfMonth } from 'date-fns';
 
@@ -50,6 +51,16 @@ export const initDatabase = () => {
                 FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
             );`
             );
+            db.execSync(
+            `CREATE TABLE IF NOT EXISTS payments(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER,
+                amount_paid REAL NOT NULL,
+                payment_date TEXT NOT NULL,
+                notes TEXT,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+            );`
+            );
         });
         resolve();
     } catch (error) {
@@ -76,7 +87,6 @@ export const updateCustomer = (id, name, address, phone) => {
 
 export const deleteCustomer = (id) => {
     return new Promise((resolve) => {
-        // Soft delete by setting isActive to 0
         db.runSync('UPDATE customers SET isActive = 0 WHERE id = ?', id);
         resolve();
     });
@@ -180,7 +190,7 @@ export const getSalesForCustomer = (customerId, startDate, endDate) => {
              FROM daily_sales ds
              JOIN products p ON ds.product_id = p.id
              WHERE ds.customer_id = ? AND ds.sale_date BETWEEN ? AND ?
-             ORDER BY ds.sale_date DESC`,
+             ORDER BY ds.sale_date ASC`,
             customerId, startDate, endDate
         );
         resolve(sales);
@@ -202,10 +212,8 @@ export const getLastSevenDaysSalesForCustomer = (customerId) => {
         const today = new Date();
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(today.getDate() - 6);
-
         const todayString = format(today, 'yyyy-MM-dd');
         const sevenDaysAgoString = format(sevenDaysAgo, 'yyyy-MM-dd');
-
         const sales = db.getAllSync(
             `SELECT DISTINCT sale_date FROM daily_sales WHERE customer_id = ? AND sale_date BETWEEN ? AND ?`,
             customerId, sevenDaysAgoString, todayString
@@ -241,6 +249,35 @@ export const getSalesDataForDate = (date) => {
     });
 };
 
+// --- Payment Operations ---
+export const recordPayment = (customerId, amount, date, notes) => {
+    return new Promise((resolve) => {
+        const result = db.runSync('INSERT INTO payments (customer_id, amount_paid, payment_date, notes) VALUES (?,?,?,?)', customerId, amount, date, notes);
+        resolve(result.lastInsertRowId);
+    });
+};
+
+export const getPaymentsForCustomer = (customerId, startDate, endDate) => {
+    return new Promise((resolve) => {
+        const payments = db.getAllSync(
+            `SELECT * FROM payments WHERE customer_id = ? AND payment_date BETWEEN ? AND ? ORDER BY payment_date ASC`,
+            customerId, startDate, endDate
+        );
+        resolve(payments);
+    });
+};
+
+// --- Reporting & Dues ---
+export const getTotalDuesForCustomerUpToDate = (customerId, date) => {
+    return new Promise((resolve) => {
+        const salesResult = db.getFirstSync('SELECT SUM(total_amount) as total FROM daily_sales WHERE customer_id = ? AND sale_date < ?', customerId, date);
+        const paymentsResult = db.getFirstSync('SELECT SUM(amount_paid) as total FROM payments WHERE customer_id = ? AND payment_date < ?', customerId, date);
+        const totalSales = salesResult?.total || 0;
+        const totalPayments = paymentsResult?.total || 0;
+        resolve(totalSales - totalPayments);
+    });
+};
+
 export const getTotalSalesForPeriod = (startDate, endDate) => {
      return new Promise((resolve) => {
         const result = db.getFirstSync('SELECT SUM(total_amount) as total FROM daily_sales WHERE sale_date BETWEEN ? AND ?', startDate, endDate);
@@ -251,28 +288,58 @@ export const getTotalSalesForPeriod = (startDate, endDate) => {
 export const getCustomerDues = () => {
      return new Promise((resolve) => {
         const dues = db.getAllSync(
-            `SELECT c.id, c.name, SUM(ds.total_amount) as total_due
+            `SELECT 
+                c.id, 
+                c.name, 
+                (SELECT SUM(total_amount) FROM daily_sales WHERE customer_id = c.id) as total_sales,
+                (SELECT SUM(amount_paid) FROM payments WHERE customer_id = c.id) as total_payments
              FROM customers c
-             LEFT JOIN daily_sales ds ON c.id = ds.customer_id
              GROUP BY c.id, c.name
-             ORDER BY total_due DESC`
+             ORDER BY c.name ASC`
         );
-        resolve(dues);
+        const calculatedDues = dues.map(d => ({
+            id: d.id,
+            name: d.name,
+            total_due: (d.total_sales || 0) - (d.total_payments || 0)
+        }));
+        resolve(calculatedDues);
     });
 };
 
 export const getCustomerDuesForPeriod = (startDate, endDate) => {
      return new Promise((resolve) => {
         const dues = db.getAllSync(
-            `SELECT c.id, c.name, SUM(ds.total_amount) as period_due
+            `SELECT
+                c.id,
+                c.name,
+                (SELECT SUM(total_amount) FROM daily_sales WHERE customer_id = c.id AND sale_date BETWEEN ? AND ?) as period_sales,
+                (SELECT SUM(amount_paid) FROM payments WHERE customer_id = c.id AND payment_date BETWEEN ? AND ?) as period_payments
              FROM customers c
-             JOIN daily_sales ds ON c.id = ds.customer_id
-             WHERE ds.sale_date BETWEEN ? AND ?
              GROUP BY c.id, c.name
-             HAVING period_due > 0
-             ORDER BY period_due DESC`,
-            startDate, endDate
+             HAVING period_sales > 0 OR period_payments > 0`,
+            startDate, endDate, startDate, endDate
         );
-        resolve(dues);
+        const calculatedDues = dues.map(d => ({
+            id: d.id,
+            name: d.name,
+            period_due: (d.period_sales || 0) - (d.period_payments || 0)
+        })).filter(d => d.period_due !== 0);
+        resolve(calculatedDues);
+    });
+};
+
+// --- Backup Operations ---
+export const getAllDataForBackup = () => {
+    return new Promise((resolve) => {
+        const today = new Date();
+        const startOfMonthString = format(startOfMonth(today), 'yyyy-MM-dd');
+        const todayString = format(today, 'yyyy-MM-dd');
+
+        const customers = db.getAllSync('SELECT * FROM customers');
+        const products = db.getAllSync('SELECT * FROM products');
+        const sales = db.getAllSync('SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ?', startOfMonthString, todayString);
+        const payments = db.getAllSync('SELECT * FROM payments WHERE payment_date BETWEEN ? AND ?', startOfMonthString, todayString);
+        
+        resolve({ customers, products, sales, payments });
     });
 };

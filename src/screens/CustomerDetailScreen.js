@@ -1,8 +1,9 @@
+
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, Alert, ScrollView, Modal, Platform } from 'react-native';
-import { Text, Button, Card, Title, Paragraph, List, Divider, useTheme, IconButton } from 'react-native-paper';
+import { Text, Button, Card, Title, Paragraph, List, Divider, useTheme, IconButton, TextInput } from 'react-native-paper';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { getCustomerById, getCustomerProducts, getSalesForCustomer, getCustomerDues, deleteCustomer } from '../db/Database';
+import { getCustomerById, getCustomerProducts, getSalesForCustomer, getCustomerDues, deleteCustomer, recordPayment, getPaymentsForCustomer, getTotalDuesForCustomerUpToDate } from '../db/Database';
 import { format, startOfMonth } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -12,17 +13,24 @@ const CustomerDetailScreen = () => {
     const [customer, setCustomer] = useState(null);
     const [products, setProducts] = useState([]);
     const [sales, setSales] = useState([]);
+    const [payments, setPayments] = useState([]);
     const [totalDue, setTotalDue] = useState(0);
     const navigation = useNavigation();
     const route = useRoute();
     const theme = useTheme();
     const { customerId } = route.params;
 
+    // State for payment modal
+    const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentDate, setPaymentDate] = useState(new Date());
+    const [showPaymentDatePicker, setShowPaymentDatePicker] = useState(false);
+
     // State for bill generation modal
     const [billModalVisible, setBillModalVisible] = useState(false);
     const [startDate, setStartDate] = useState(startOfMonth(new Date()));
     const [endDate, setEndDate] = useState(new Date());
-    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [showBillDatePicker, setShowBillDatePicker] = useState(false);
     const [isSettingStartDate, setIsSettingStartDate] = useState(true);
 
     const loadData = useCallback(() => {
@@ -37,9 +45,30 @@ const CustomerDetailScreen = () => {
         const recentEndDate = format(new Date(), 'yyyy-MM-dd');
         const recentStartDate = format(new Date(new Date().setDate(new Date().getDate() - 30)), 'yyyy-MM-dd');
         getSalesForCustomer(customerId, recentStartDate, recentEndDate).then(setSales);
+        getPaymentsForCustomer(customerId, recentStartDate, recentEndDate).then(setPayments);
     }, [customerId]);
 
     useFocusEffect(loadData);
+
+    const handleSavePayment = () => {
+        const amount = parseFloat(paymentAmount);
+        if (isNaN(amount) || amount <= 0) {
+            Alert.alert("Invalid Amount", "Please enter a valid payment amount.");
+            return;
+        }
+        const dateString = format(paymentDate, 'yyyy-MM-dd');
+        recordPayment(customerId, amount, dateString, '')
+            .then(() => {
+                Alert.alert("Success", "Payment recorded successfully.");
+                setPaymentModalVisible(false);
+                setPaymentAmount('');
+                loadData(); // Refresh all data
+            })
+            .catch(err => {
+                Alert.alert("Error", "Could not record payment.");
+                console.error(err);
+            });
+    };
 
     const handleDelete = () => {
         Alert.alert(
@@ -72,57 +101,54 @@ const CustomerDetailScreen = () => {
         const formattedStartDate = format(startDate, 'yyyy-MM-dd');
         const formattedEndDate = format(endDate, 'yyyy-MM-dd');
 
+        const openingBalance = await getTotalDuesForCustomerUpToDate(customerId, formattedStartDate);
         const salesForBill = await getSalesForCustomer(customerId, formattedStartDate, formattedEndDate);
+        const paymentsForBill = await getPaymentsForCustomer(customerId, formattedStartDate, formattedEndDate);
 
-        let salesRows = salesForBill.map(sale => `
-            <tr>
-                <td>${format(new Date(sale.sale_date + 'T00:00:00'), 'dd-MM-yyyy')}</td>
-                <td>${sale.product_name}</td>
-                <td>${sale.quantity.toFixed(2)}</td>
-                <td>₹${sale.price_per_unit.toFixed(2)}</td>
-                <td>₹${sale.total_amount.toFixed(2)}</td>
-            </tr>
-        `).join('');
+        const salesTotal = salesForBill.reduce((acc, sale) => acc + sale.total_amount, 0);
+        const paymentsTotal = paymentsForBill.reduce((acc, p) => acc + p.amount_paid, 0);
+        const closingBalance = openingBalance + salesTotal - paymentsTotal;
 
-        const billTotal = salesForBill.reduce((acc, sale) => acc + sale.total_amount, 0);
+        let salesRows = salesForBill.map(sale => `<tr><td>${format(new Date(sale.sale_date + 'T00:00:00'), 'dd-MM-yy')}</td><td>${sale.product_name} (${sale.quantity})</td><td style="text-align:right;">₹${sale.total_amount.toFixed(2)}</td></tr>`).join('');
+        let paymentsRows = paymentsForBill.map(p => `<tr><td>${format(new Date(p.payment_date + 'T00:00:00'), 'dd-MM-yy')}</td><td>Payment Received</td><td style="text-align:right;">- ₹${p.amount_paid.toFixed(2)}</td></tr>`).join('');
 
         const htmlContent = `
             <html>
-                <head><style>body{font-family:sans-serif;padding:20px;} h1,h2{text-align:center;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background-color:#f2f2f2;}</style></head>
+                <head><style>body{font-family:sans-serif;padding:20px;} h1,h2{text-align:center;} table{width:100%;border-collapse:collapse;margin-bottom:20px;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background-color:#f2f2f2;} .summary-table td{font-weight:bold;}</style></head>
                 <body>
-                    <h1>Milk Bill</h1>
+                    <h1>Bill Statement</h1>
                     <h2>${customer.name}</h2>
-                    <p><strong>Bill Period:</strong> ${format(startDate, 'dd MMM yyyy')} to ${format(endDate, 'dd MMM yyyy')}</p>
+                    <p><strong>Period:</strong> ${format(startDate, 'dd MMM yyyy')} to ${format(endDate, 'dd MMM yyyy')}</p>
                     <hr/>
-                    <h3>Sales Details</h3>
-                    <table>
-                        <thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
-                        <tbody>${salesRows.length > 0 ? salesRows : '<tr><td colspan="5" style="text-align:center;">No sales in this period.</td></tr>'}</tbody>
+                    <table><thead><tr><th>Date</th><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+                        <tbody>
+                            <tr><td></td><td><strong>Opening Balance</strong></td><td style="text-align:right;"><strong>₹${openingBalance.toFixed(2)}</strong></td></tr>
+                            ${salesRows}
+                            ${paymentsRows}
+                        </tbody>
                     </table>
-                    <h3 style="text-align:right;margin-top:20px;">Period Total: ₹${billTotal.toFixed(2)}</h3>
-                    <h3 style="text-align:right;">Total Outstanding Due: ₹${totalDue ? totalDue.toFixed(2) : '0.00'}</h3>
+                    <table class="summary-table">
+                        <tr><td>Period Sales</td><td style="text-align:right;">₹${salesTotal.toFixed(2)}</td></tr>
+                        <tr><td>Period Payments</td><td style="text-align:right;">- ₹${paymentsTotal.toFixed(2)}</td></tr>
+                        <tr><td>Closing Balance</td><td style="text-align:right;">₹${closingBalance.toFixed(2)}</td></tr>
+                    </table>
                 </body>
             </html>
         `;
 
         try {
             const { uri } = await Print.printToFileAsync({ html: htmlContent });
-            if (!(await Sharing.isAvailableAsync())) {
-                Alert.alert("Sharing not available", "Sharing is not available on your device.");
-                return;
-            }
             await Sharing.shareAsync(uri, { dialogTitle: 'Share Bill', mimeType: 'application/pdf' });
         } catch (error) {
             Alert.alert("Error", "Could not generate or share PDF.");
-            console.error(error);
         } finally {
             setBillModalVisible(false);
         }
     };
 
-    const onDateChange = (event, selectedDate) => {
+    const onBillDateChange = (event, selectedDate) => {
         const currentDate = selectedDate || (isSettingStartDate ? startDate : endDate);
-        setShowDatePicker(Platform.OS === 'ios');
+        setShowBillDatePicker(Platform.OS === 'ios');
         if (isSettingStartDate) {
             setStartDate(currentDate);
         } else {
@@ -144,10 +170,29 @@ const CustomerDetailScreen = () => {
                     <Title style={styles_details.dueText}>Total Due: ₹{totalDue ? totalDue.toFixed(2) : '0.00'}</Title>
                 </Card.Content>
                 <Card.Actions style={styles_details.actions}>
-                    <Button onPress={() => navigation.navigate('AddEditCustomer', { customerId: customer.id })}>Edit</Button>
+                    <Button onPress={() => setPaymentModalVisible(true)}>Add Payment</Button>
                     <Button onPress={() => setBillModalVisible(true)}>Generate Bill</Button>
                     <Button color={theme.colors.error} onPress={handleDelete}>Delete</Button>
                 </Card.Actions>
+            </Card>
+
+            <Card style={styles_details.card}>
+                <Card.Content>
+                    <Title>Recent Payments</Title>
+                    <List.Section>
+                        {payments.map(p => (
+                            <View key={p.id}>
+                                <List.Item
+                                    title={`₹${p.amount_paid.toFixed(2)}`}
+                                    description={`On ${format(new Date(p.payment_date + 'T00:00:00'), 'dd MMM yyyy')}`}
+                                    left={() => <List.Icon icon="cash" color="green" />}
+                                />
+                                <Divider />
+                            </View>
+                        ))}
+                         {payments.length === 0 && <Text>No recent payments.</Text>}
+                    </List.Section>
+                </Card.Content>
             </Card>
 
             <Card style={styles_details.card}>
@@ -189,6 +234,46 @@ const CustomerDetailScreen = () => {
             <Modal
                 animationType="slide"
                 transparent={true}
+                visible={paymentModalVisible}
+                onRequestClose={() => setPaymentModalVisible(false)}
+            >
+                <View style={styles_details.modalContainer}>
+                    <Card style={styles_details.modalCard}>
+                        <Card.Title
+                            title="Record Payment"
+                            subtitle={customer?.name}
+                            right={(props) => <IconButton {...props} icon="close" onPress={() => setPaymentModalVisible(false)} />}
+                        />
+                        <Card.Content>
+                            <TextInput
+                                label="Amount Paid (₹)"
+                                value={paymentAmount}
+                                onChangeText={setPaymentAmount}
+                                keyboardType="numeric"
+                                mode="outlined"
+                            />
+                            <Button icon="calendar" mode="outlined" onPress={() => setShowPaymentDatePicker(true)} style={{marginTop: 15}}>
+                                Payment Date: {format(paymentDate, 'dd MMM yyyy')}
+                            </Button>
+                            {showPaymentDatePicker && (
+                                <DateTimePicker
+                                    value={paymentDate}
+                                    mode="date"
+                                    display="default"
+                                    onChange={(e, d) => { setShowPaymentDatePicker(false); setPaymentDate(d || paymentDate); }}
+                                />
+                            )}
+                            <Button mode="contained" onPress={handleSavePayment} style={{marginTop: 20}}>
+                                Save Payment
+                            </Button>
+                        </Card.Content>
+                    </Card>
+                </View>
+            </Modal>
+            
+            <Modal
+                animationType="slide"
+                transparent={true}
                 visible={billModalVisible}
                 onRequestClose={() => setBillModalVisible(false)}
             >
@@ -200,20 +285,20 @@ const CustomerDetailScreen = () => {
                             right={(props) => <IconButton {...props} icon="close" onPress={() => setBillModalVisible(false)} />}
                         />
                         <Card.Content>
-                            <Button icon="calendar" mode="outlined" onPress={() => { setIsSettingStartDate(true); setShowDatePicker(true); }}>
+                            <Button icon="calendar" mode="outlined" onPress={() => { setIsSettingStartDate(true); setShowBillDatePicker(true); }}>
                                 Start Date: {format(startDate, 'dd MMM yyyy')}
                             </Button>
-                            <Button icon="calendar" mode="outlined" onPress={() => { setIsSettingStartDate(false); setShowDatePicker(true); }} style={{marginTop: 10}}>
+                            <Button icon="calendar" mode="outlined" onPress={() => { setIsSettingStartDate(false); setShowBillDatePicker(true); }} style={{marginTop: 10}}>
                                 End Date: {format(endDate, 'dd MMM yyyy')}
                             </Button>
                             
-                            {showDatePicker && (
+                            {showBillDatePicker && (
                                 <DateTimePicker
                                     testID="billDatePicker"
                                     value={isSettingStartDate ? startDate : endDate}
                                     mode="date"
                                     display="default"
-                                    onChange={onDateChange}
+                                    onChange={onBillDateChange}
                                 />
                             )}
                             <Button mode="contained" onPress={generateBillPDF} style={{marginTop: 20}}>
