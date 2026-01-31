@@ -1,3 +1,10 @@
+/*
+================================================================================
+File: App.js
+Description: Main entry point and Navigation setup.
+*** UPDATED: Added Expenses Screen to Tab Navigator. ***
+================================================================================
+*/
 import 'react-native-gesture-handler'; // This must be the very first import
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -15,6 +22,7 @@ import AddEditCustomerScreen from './src/screens/AddEditCustomerScreen';
 import CustomerDetailScreen from './src/screens/CustomerDetailScreen';
 import ManageProductsScreen from './src/screens/ManageProductsScreen';
 import ManageGlobalProductsScreen from './src/screens/ManageGlobalProductsScreen';
+import ExpensesScreen from './src/screens/ExpensesScreen'; // NEW
 import { initDatabase } from './src/db/Database';
 
 const Stack = createStackNavigator();
@@ -36,48 +44,46 @@ function CustomerStack() {
       screenOptions={{
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: 'bold' },
       }}>
-      <Stack.Screen name="CustomerList" component={CustomersScreen} options={{ title: 'Daily Sales' }} />
-      <Stack.Screen name="AddEditCustomer" component={AddEditCustomerScreen} options={{ title: 'Add/Edit Customer' }} />
+      <Stack.Screen name="CustomersList" component={CustomersScreen} options={{ title: 'Customers' }} />
+      <Stack.Screen name="AddEditCustomer" component={AddEditCustomerScreen} options={{ title: 'Manage Customer' }} />
       <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} options={{ title: 'Customer Details' }} />
-      <Stack.Screen name="ManageProducts" component={ManageProductsScreen} options={{ title: 'Manage Products' }} />
+      <Stack.Screen name="ManageProducts" component={ManageProductsScreen} options={{ title: 'Assign Products' }} />
     </Stack.Navigator>
   );
 }
 
-// Dashboard Stack Navigator
+// Dashboard Stack Navigator (to include Global Products management)
 function DashboardStack() {
     return (
         <Stack.Navigator
             screenOptions={{
                 headerStyle: { backgroundColor: theme.colors.primary },
                 headerTintColor: '#fff',
+                headerTitleStyle: { fontWeight: 'bold' },
             }}>
-            <Stack.Screen
-                name="DashboardHome"
-                component={DashboardScreen}
+            <Stack.Screen 
+                name="DashboardMain" 
+                component={DashboardScreen} 
                 options={({ navigation }) => ({
                     title: 'Dashboard',
                     headerRight: () => (
                         <IconButton
-                            icon="pencil"
+                            icon="cog"
                             color="#fff"
                             onPress={() => navigation.navigate('ManageGlobalProducts')}
                         />
-                    ),
-                })}
+                    )
+                })} 
             />
-            <Stack.Screen
-                name="ManageGlobalProducts"
-                component={ManageGlobalProductsScreen}
-                options={{ title: 'Manage All Products' }}
-            />
+            <Stack.Screen name="ManageGlobalProducts" component={ManageGlobalProductsScreen} options={{ title: 'Product Inventory' }} />
         </Stack.Navigator>
     );
 }
 
-// Main App Tabs
-function AppTabs() {
+// Main Tab Navigator
+function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -85,6 +91,7 @@ function AppTabs() {
           let iconName;
           if (route.name === 'Dashboard') iconName = focused ? 'view-dashboard' : 'view-dashboard-outline';
           else if (route.name === 'Customers') iconName = focused ? 'account-group' : 'account-group-outline';
+          else if (route.name === 'Expenses') iconName = focused ? 'cash-minus' : 'cash-minus'; // NEW ICON
           else if (route.name === 'Reports') iconName = focused ? 'chart-bar' : 'chart-bar-stacked';
           return <Icon name={iconName} size={size} color={color} />;
         },
@@ -94,7 +101,8 @@ function AppTabs() {
       })}>
       <Tab.Screen name="Dashboard" component={DashboardStack} />
       <Tab.Screen name="Customers" component={CustomerStack} />
-      <Tab.Screen name="Reports" component={ReportsScreen} />
+      <Tab.Screen name="Expenses" component={ExpensesScreen} options={{ title: 'Expenses', headerShown: true, headerStyle: { backgroundColor: theme.colors.primary }, headerTintColor: '#fff' }} /> 
+      <Tab.Screen name="Reports" component={ReportsScreen} options={{ title: 'Reports', headerShown: true, headerStyle: { backgroundColor: theme.colors.primary }, headerTintColor: '#fff' }} />
     </Tab.Navigator>
   );
 }
@@ -126,7 +134,7 @@ export default function App() {
     return (
         <PaperProvider theme={theme}>
             <NavigationContainer>
-                <AppTabs />
+                <MainTabs />
             </NavigationContainer>
         </PaperProvider>
     );
