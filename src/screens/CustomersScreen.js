@@ -2,15 +2,15 @@
 ================================================================================
 File: src/screens/CustomersScreen.js
 Description: List of customers with search, quick sales entry, and history view.
-*** UPDATED: Fixed bug where new customers (without sales) were hidden ***
+*** UPDATED: Changed Add Entry button color to Orange for better visibility ***
 ================================================================================
 */
 import React, { useState, useCallback, useLayoutEffect } from 'react';
 import { View, StyleSheet, FlatList, Alert, Modal, Platform, TouchableOpacity } from 'react-native';
-import { Text, Button, Card, Title, IconButton, useTheme, Menu, Divider, TextInput, Searchbar, FAB, Avatar, Surface, Badge } from 'react-native-paper';
+import { Text, Button, Card, Title, IconButton, useTheme, Divider, TextInput, Searchbar, FAB, Avatar, Surface } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { getSalesDataForDate, recordSale, updateSale, deleteSale, getCustomerProducts, getSaleForCustomerProductAndDate, getLastSevenDaysSalesForCustomer, getSalesForCustomer, getAllCustomers } from '../db/Database';
-import { format, parseISO } from 'date-fns';
+import { getSalesDataForDate, recordSale, updateSale, getCustomerProducts, getSaleForCustomerProductAndDate, getLastSevenDaysSalesForCustomer, getSalesForCustomer, getAllCustomers } from '../db/Database';
+import { format } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
@@ -258,9 +258,9 @@ const CustomersScreen = () => {
                             <Avatar.Text 
                                 size={48} 
                                 label={initials} 
-                                style={{ backgroundColor: theme.colors.primary }} 
-                                labelStyle={{ fontSize: 15, fontWeight: 'bold' }} // Reduced size for better padding
-                                color="white"
+                                style={{ backgroundColor: '#fff3e0' }} 
+                                labelStyle={{ fontSize: 18, fontWeight: 'bold' }} // Adjusted font size
+                                color="#f57c00"
                             />
                             <View style={{ marginLeft: 12 }}>
                                 <Title style={styles_customers.name}>{item.customer_name}</Title>
@@ -288,6 +288,7 @@ const CustomersScreen = () => {
                                     onPress={(e) => { e.stopPropagation(); openEntryModal(item); }}
                                     style={styles_customers.addBtn}
                                     labelStyle={{ fontSize: 12 }}
+                                    textColor="white" 
                                 >
                                     Add Entry
                                 </Button>
@@ -462,7 +463,7 @@ const styles_customers = StyleSheet.create({
     },
 
     // Badges & Buttons
-    addBtn: { borderRadius: 20, backgroundColor: '#0066cc' },
+    addBtn: { borderRadius: 20, backgroundColor: '#ff9800', elevation: 2}, // Updated to Orange
     recordedBadge: { 
         flexDirection: 'row', 
         alignItems: 'center', 

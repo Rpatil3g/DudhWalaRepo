@@ -2,7 +2,7 @@
 ================================================================================
 File: src/screens/ReportsScreen.js
 Description: Comprehensive Financial Reports with Profit/Loss and Customer Dues.
-*** UPDATED: Highlighted Selected Date Filter Chip ***
+*** UPDATED: Filtered out customers with 0 dues ***
 ================================================================================
 */
 import React, { useState, useCallback, useLayoutEffect } from 'react';
@@ -58,9 +58,12 @@ const ReportsScreen = () => {
                 expenses: expenses,
                 profit: sales - expenses
             });
-            // Filter customers who have any activity or dues
-            const activeCustomers = customers.filter(c => c.total_due !== 0 || c.period_sales > 0 || c.period_payments > 0);
+            
+            // Filter: Only show customers with actual Total Dues (Positive or Negative/Advance)
+            // Using > 0.5 to handle potential floating point dust, treating < 0.5 as 0.
+            const activeCustomers = customers.filter(c => Math.abs(c.total_due) > 0.5);
             setCustomerReports(activeCustomers);
+            
         }).catch(err => console.error("Error loading reports:", err));
 
     }, [startDate, endDate]);
@@ -371,7 +374,7 @@ const ReportsScreen = () => {
                             </View>
                             <IconButton 
                                 icon="whatsapp" 
-                                iconColor="white" 
+                                color="white" 
                                 size={24}
                                 style={{backgroundColor: '#25D366'}}
                                 onPress={() => generateCustomerPDF(item)}
@@ -381,7 +384,7 @@ const ReportsScreen = () => {
                 ))}
                 
                 {customerReports.length === 0 && (
-                    <Text style={styles.emptyText}>No activity found for this period.</Text>
+                    <Text style={styles.emptyText}>No customer dues found for this period.</Text>
                 )}
 
             </ScrollView>
