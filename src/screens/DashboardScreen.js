@@ -12,7 +12,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getTotalSalesForPeriod, getCustomerDues, getAllDataForBackup, getTotalExpensesForPeriod } from '../db/Database';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
@@ -127,7 +127,7 @@ const DashboardScreen = () => {
         try {
             const data = await getAllDataForBackup();
             const fileUri = FileSystem.documentDirectory + `milkwala_backup_${data.backupDate}.json`;
-            await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(data), { encoding: FileSystem.EncodingType.UTF8 });
+            await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(data), { encoding: 'utf8' });
             
             if (!(await Sharing.isAvailableAsync())) {
                 Alert.alert("Error", "Sharing is not available on this device");

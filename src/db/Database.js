@@ -547,23 +547,23 @@ export const deleteExpense = async (id) => {
 // --- Backup Operations ---
 export const getAllDataForBackup = async () => {
     try {
-        const today = new Date();
-        const startOfMonthString = format(startOfMonth(today), 'yyyy-MM-dd');
-        const todayString = format(today, 'yyyy-MM-dd');
+        const todayString = format(new Date(), 'yyyy-MM-dd');
 
-        // Using Promise.all for parallel fetching
-        const [customers, products, sales, payments, expenses] = await Promise.all([
+        const [customers, products, customerProducts, sales, payments, expenses] = await Promise.all([
             db.getAllAsync('SELECT * FROM customers'),
             db.getAllAsync('SELECT * FROM products'),
-            db.getAllAsync('SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ?', [startOfMonthString, todayString]),
-            db.getAllAsync('SELECT * FROM payments WHERE payment_date BETWEEN ? AND ?', [startOfMonthString, todayString]),
-            db.getAllAsync('SELECT * FROM expenses WHERE expense_date BETWEEN ? AND ?', [startOfMonthString, todayString])
+            db.getAllAsync('SELECT * FROM customer_products'),
+            db.getAllAsync('SELECT * FROM daily_sales ORDER BY sale_date ASC'),
+            db.getAllAsync('SELECT * FROM payments ORDER BY payment_date ASC'),
+            db.getAllAsync('SELECT * FROM expenses ORDER BY expense_date ASC'),
         ]);
 
         return {
             backupDate: todayString,
+            schemaVersion: 1,
             customers,
             products,
+            customerProducts,
             sales,
             payments,
             expenses
